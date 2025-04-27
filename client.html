@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Client Chat gRPC via WebSocket</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #messages { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        #messageForm { display: flex; margin-bottom: 10px; }
+        #messageInput { flex-grow: 1; margin-right: 10px; }
+        #roomInput { width: 100px; margin-right: 10px; }
+        #historyBtn { margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Client Chat</h1>
+    
+    <div>
+        <label for="roomInput">Salle:</label>
+        <input type="text" id="roomInput" value="room1">
+        <button id="historyBtn">Voir historique</button>
+    </div>
+    
+    <div id="messages"></div>
+    
+    <form id="messageForm">
+        <input type="text" id="messageInput" placeholder="Entrez votre message...">
+        <button type="submit">Envoyer</button>
+    </form>
+
+    <script>
+        const messagesEl = document.getElementById('messages');
+        const messageForm = document.getElementById('messageForm');
+        const messageInput = document.getElementById('messageInput');
+        const roomInput = document.getElementById('roomInput');
+        const historyBtn = document.getElementById('historyBtn');
+        
+        const ws = new WebSocket('ws://localhost:8080');
+        
+        ws.onopen = () => {
+            addMessage('Système', 'Connecté au serveur');
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            if (data.error) {
+                addMessage('Erreur', data.error);
+            } else if (data.action === 'history_response') {
+                addMessage('Système', `Historique (${data.messages.length} messages):`);
+                data.messages.forEach(msg => {
+                    addMessage(msg.sender_id, msg.content);
+                });
+            } else if (data.chat_message) {
+                const msg = data.chat_message;
+                addMessage(msg.sender_id, msg.content);
+            }
+        };
+        
+        ws.onclose = () => {
+            addMessage('Système', 'Déconnecté du serveur');
+        };
+        
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const content = messageInput.value.trim();
+            const roomId = roomInput.value.trim();
+            
+            if (content) {
+                const message = {
+                    chat_message: {
+                        id: Date.now().toString(),
+                        room_id: roomId,
+                        sender_id: 'user_' + Math.random().toString(36).substr(2, 5),
+                        content: content
+                    }
+                };
+                ws.send(JSON.stringify(message));
+                messageInput.value = '';
+            }
+        });
+        
+        historyBtn.addEventListener('click', () => {
+            const roomId = roomInput.value.trim();
+            ws.send(JSON.stringify({
+                action: 'get_history',
+                room_id: roomId,
+                limit: 5
+            }));
+        });
+        
+        function addMessage(sender, content) {
+            const messageEl = document.createElement('div');
+            messageEl.innerHTML = `<strong>${sender}:</strong> ${content}`;
+            messagesEl.appendChild(messageEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+    </script>
+</body>
+</html>
